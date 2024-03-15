@@ -11,11 +11,13 @@ import (
 
 type APIServer struct {
 	listenAddr string
+	store Storage
 }
 
-func NewAPIServer(listenAddr string) *APIServer {
+func NewAPIServer(listenAddr string, store Storage) *APIServer {
 	return &APIServer{
 		listenAddr: listenAddr,
+		store: store,
 	}
 }
 
@@ -24,7 +26,7 @@ func (s *APIServer) Run() {
 
 	router.HandleFunc("/account", makeHTTPHandleFunc(s.handleAccount))
 
-	router.HandleFunc("/account/{id}", makeHTTPHandleFunc(s.handleGetAccount))
+	router.HandleFunc("/account/{id}", makeHTTPHandleFunc(s.handleGetAccountById))
 
 	log.Println("JSON API server running on port: ", s.listenAddr)
 
@@ -42,7 +44,16 @@ func(s *APIServer) handleAccount(w http.ResponseWriter, r *http.Request) error {
 	return fmt.Errorf("method not allowed %s", r.Method)
 }
 
+// GET /acount
 func(s *APIServer) handleGetAccount(w http.ResponseWriter, r *http.Request) error {
+	accounts, err := s.store.GetAccounts()
+	if err != nil {
+		return err
+	}
+	return WriteJSON(w, http.StatusOK, accounts)
+}
+
+func(s *APIServer) handleGetAccountById(w http.ResponseWriter, r *http.Request) error {
 	id := mux.Vars(r)["id"]
 	fmt.Println(id)
 	// account := NewAccount("Amirabbas", "Ghasemi")
@@ -52,7 +63,23 @@ func(s *APIServer) handleGetAccount(w http.ResponseWriter, r *http.Request) erro
 }
 
 func(s *APIServer) handleCreateAccount(w http.ResponseWriter, r *http.Request) error {
-	return nil;
+    decoder := json.NewDecoder(r.Body)
+    t := &CreateAccountRequest{}
+    err := decoder.Decode(&t)
+    if err != nil {
+        panic(err)
+    }
+	account := NewAccount(t.FirstName, t.LastName)
+
+	lastInsertId, err := s.store.CreateAccount(account)
+
+	if err != nil {
+		return err
+	}
+
+	account.ID = lastInsertId
+
+	return WriteJSON(w, http.StatusCreated, account)
 }
 
 func(s *APIServer) handleDeleteAccount(w http.ResponseWriter, r *http.Request) error {
@@ -65,8 +92,8 @@ func(s *APIServer) handleTransfer(w http.ResponseWriter, r *http.Request) error 
 
 
 func WriteJSON(w http.ResponseWriter, status int, v any) error {
+	w.Header().Add("Content-Type", "application/json")
 	w.WriteHeader(status)
-	w.Header().Set("Content-Type", "application/json")
 	return json.NewEncoder(w).Encode(v)
 }
 
